@@ -1,80 +1,88 @@
 #!/usr/bin/env python3
 import sys
-import random
 
-# Define the function for computing the shortest path in multistage graphs with stochastic transitions
-def stochastic_shortest_path_multistage(p, levels, node_quantities, transition_costs):
-    # Compute the total number of nodes in the graph
+def stochastic_shortest_path_multistage(levels, node_quantities, transition_costs, p):
     n = sum(node_quantities)
-    # Initialize the DP table with large values
-    dp = [[sys.maxsize for _ in range(node_quantities[k])] for k in range(levels)]
-    # Initialize the directions table to keep track of optimal directions
-    directions = [[0 for j in range(node_quantities[k])] for k in range(levels)]
-    # Set the costs of the nodes in the last level to 0
-    for j in range(node_quantities[levels-1]):
-        dp[levels-1][j] = 0
+    V = [[float('inf') for _ in range(node_quantities[k])] for k in range(levels)]
+    decisions = [[0 for _ in range(node_quantities[k])] for k in range(levels)]
 
-    # Solve subproblems using dynamic programming
-    for k in range(levels-2, -1, -1):
-        for i in range(node_quantities[k]):
-            for j in range(node_quantities[k+1]):
-                # Check if there is a valid transition between nodes i and j
-                if transition_costs[k][i][j] < sys.maxsize:
-                    # Compute the new cost with stochastic transitions
-                    new_cost = transition_costs[k][i][j] + dp[k+1][j]
-                    # Update the cost and direction if the new cost is smaller
-                    if new_cost < dp[k][i]:
-                        dp[k][i] = new_cost
-                        directions[k][i] = j
+    # Base case: Set the value function at the final stage to 0
+    V[levels - 1] = [0] * node_quantities[levels - 1]
 
-    # Find the optimal path and minimum expected cost
+    # Dynamic programming iteration
+    for i in range(levels - 2, -1, -1):
+        for state in range(node_quantities[i]):
+            min_cost = float('inf')
+            min_decision = -1
+
+            for decision in range(node_quantities[i + 1]):
+                num_decisions = node_quantities[i + 1]
+                transition_cost = transition_costs[i][state][decision]
+
+                if num_decisions > 1:
+                    prob_other_decisions = (1 - p) / (num_decisions - 1)
+                    cost = transition_cost + p * V[i + 1][decision]
+                    cost += prob_other_decisions * sum(V[i + 1][decision] for d in range(num_decisions) if d != decision)
+                else:
+                    p=1
+                    cost = transition_cost + p * V[i + 1][decision]
+
+                if cost < min_cost:
+                    min_cost = cost
+                    min_decision = decision
+
+            V[i][state] = min_cost
+            decisions[i][state] = min_decision
+
+    # Find the optimal path
     path = [0] * levels
-    path[0] = 0
-    for k in range(levels-1):
-        path[k+1] = directions[k][path[k]]
-    minimum_expected_cost = dp[0][0]
+    path[0] = decisions[0][0]
 
-    # Print the optimal direction for every node of the graph
-    print("Optimal directions:")
-    for k in range(levels-1):
-        for i in range(node_quantities[k]):
-            print(f"From level {k+1} node {i+1} to level {k+2} node {directions[k][i]+1}")
+    for i in range(1, levels):
+        path[i] = decisions[i - 1][path[i - 1]]
 
+    total_cost = V[0][path[0]] + transition_costs[0][0][path[0]]
+    
     # Print the shortest path from the beginning to the end goal with its corresponding cost of transition
     print("\nShortest path:")
-    print(" -> ".join([f"({k+1}, {path[k]+1})" for k in range(levels)]))
-    print(f"Minimum expected cost: {minimum_expected_cost}")
+    print(" -> ".join([f"({k}, {path[k]})" for k in range(levels)]))
+    print(f"Total cost of transition: {total_cost}")
 
-    return (path, minimum_expected_cost, dp)
-
-# Get user input for the probability p, levels, node quantities, and transition costs
-p = float(input("Enter the probability p: "))
-levels = int(input("Enter the number of levels: "))
-node_quantities = []
-for k in range(levels):
-    n = int(input(f"Enter the number of nodes in level {k+1}: "))
-    node_quantities.append(n)
-transition_costs = []
-for k in range(levels-1):
-    costs = []
-    for i in range(node_quantities[k]):
-        row = input(f"Enter the transition costs from level {k+1} node {i+1} to level {k+2} (separated by spaces): ").split()
-        costs.append([int(c) if c != '100' else sys.maxsize for c in row])
-    transition_costs.append(costs)
-
-# Modify the transition costs to account for stochastic transitions
-# Modify the transition costs to account for stochastic transitions
-for k in range(levels-1):
-    for i in range(node_quantities[k]):
-        num_transitions = node_quantities[k+1]
-        if num_transitions > 1:
-            transition_probabilities = [p] + [(1-p) / (num_transitions - 1)] * (num_transitions - 1)
-            random.shuffle(transition_probabilities)
-            expected_costs = [cost * prob for cost, prob in zip(transition_costs[k][i], transition_probabilities)]
-            transition_costs[k][i] = expected_costs
-        else:
-            transition_costs[k][i][0] = 0  # Only one direction, cost is 0
+    return path, total_cost, V
 
 
 
-path, total_cost, dp = stochastic_shortest_path_multistage(p, levels, node_quantities, transition_costs)
+def parse_graph_file(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+
+    p = float(lines[0].strip())
+    levels = int(lines[1].strip())
+    node_quantities = [int(lines[i].strip()) for i in range(2, levels + 2)]
+
+    transition_costs = []
+    index = levels + 2
+    for level in range(levels - 1):
+        costs = []
+        for _ in range(node_quantities[level]):
+            line = lines[index].strip()
+            costs.append(list(map(int, line.split())))
+            index += 1
+        transition_costs.append(costs)
+
+    return levels, node_quantities, transition_costs, p
+
+
+# Get the graph file path from command-line arguments
+file_path = sys.argv[1]
+
+# Parse the graph file
+levels, node_quantities, transition_costs, p = parse_graph_file(file_path)
+
+# Call the shortest_path_multistage function
+path, total_cost, dp = stochastic_shortest_path_multistage(levels, node_quantities, transition_costs, p)
+
+# Print the optimal path
+print( path)
+
+
